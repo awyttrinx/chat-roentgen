@@ -1,10 +1,14 @@
 # tea
 
-tea is a web app that analyzes exported WhatsApp conversations. The quantitative layer runs entirely in your browser — no data leaves your device. If you want a deeper read, you decide when that happens and exactly what gets sent.
+With tea you can see how you actually talk to someone on WhatsApp: who writes more, who answers faster, who starts the conversation, and at what times you are most active. You upload an exported chat, and the first results appear right away in your browser, without the chat ever leaving your device.
 
-The app shows patterns in your own communication. Not advice, not scores — just what is actually there in the data.
+If you want a deeper read of your communication style, you can unlock it. Before anything is sent, tea shows you exactly how many messages leave your device, and names are replaced first.
 
-**Live:** www.spillteato.me
+tea shows patterns, not advice and not scores.
+
+- **Live:** [spillteato.me](https://www.spillteato.me)
+- **Built by:** Antonia Wittrin and Nils Heck, CODE University of Applied Sciences, Berlin
+- **This documentation:** written by Antonia Wittrin for SE_07 Technical Documentation, Fall 2026
 
 ---
 
@@ -14,13 +18,14 @@ tea runs in the browser, so no installation is needed to use it. Open the link a
 
 To run it locally for development:
 
-1. Clone the repository: `git clone https://github.com/Nils43/chat-roentgen.git`
+1. Clone the repository: `git clone https://github.com/awyttrinx/chat-roentgen.git`
 2. Move into the app directory: `cd chat-roentgen/roentgen`
 3. Install dependencies: `npm install`
-4. Create your environment file: `cp .env.example .env.local` and add your Anthropic API key
-5. Start the dev server: `npm run dev` and open `http://localhost:3000`
+4. Create your environment file: `cp .env.example .env`. No API key is needed to start, the app uses sample profiles by default
+5. Start the dev server: `npm run dev` and open `http://localhost:5173`
 
-For the full setup guide, see [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+For the full setup guide, see [`getting-started.md`](./getting-started.md).
+
 
 ---
 
@@ -44,7 +49,7 @@ WhatsApp export formats vary between iOS and Android and across different langua
 This can happen if a participant changed their display name at some point during the chat. WhatsApp records the name at the time of export, but older messages may carry a different name. This is a known limitation of the WhatsApp export format.
 
 **The AI modules are not loading.**
-If you are running locally, confirm that `ANTHROPIC_API_KEY` is set in your `.env.local` file and that you restarted the dev server after making changes. If you are on the live app and the modules stay loading for more than a minute, try refreshing the page and unlocking again — the session is not stored, but your payment carries over.
+If you are running locally, confirm that `ANTHROPIC_API_KEY` is set in your `.env` file, that `VITE_ROENTGEN_ANALYZER` is set to `api`, and that you restarted the dev server after making changes. If you are on the live app and the modules stay loading for more than a minute, try refreshing the page and unlocking again — the session is not stored, but your payment carries over.
 
 **The app is slow on large chats.**
 Chats with more than 20,000 messages may take a few seconds to parse. This runs on your device, so performance depends on your hardware. The AI modules also take longer because more content needs to be sampled and sent.
@@ -150,10 +155,4 @@ flowchart TD
 ## License
 
 MIT. Free to use, copy, modify, and distribute this code, as long as the original copyright notice is included.
-
----
-
-## Maintained by
-
-Antonia Wittrin and Nils Heck — CODE University of Applied Sciences, Berlin
 
