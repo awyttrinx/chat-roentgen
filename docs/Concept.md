@@ -1,338 +1,139 @@
-# tea — Concept & Architecture
+<!-- Owner: @awyttrinx (documentation). Last checked against the code: 19 Nov 2026. -->
 
-> **TL;DR.** tea is a single-page React app that reads a WhatsApp chat export and returns statistics plus AI-written profiles about the people in the chat. The full chat never leaves the browser. Only a curated, pseudonymized evidence packet is sent to the AI. Default mode runs on pre-written fixtures, so the entire UX works offline without any API key.
+# About tea: how it works and why
 
-**Who this document is for.** Engineers who plan to read, modify or contribute to the codebase and reviewers trying to evaluate the design. It assumes you know TypeScript, React and what a serverless function is. It does *not* assume you know anything about WhatsApp exports, the Anthropic API, Stripe Checkout or Supabase.
+This document explains how tea turns a WhatsApp chat into statistics and AI reads, and why it is built the way it is. It is for developers and reviewers who want to understand the design before they read the code. It answers "what" and "why". For "how do I", see [Getting started](getting-started.md) and [Contributing](CONTRIBUTING.md).
 
+After reading it you will know:
 
-**What you'll know after reading this.**
-1. The three layers the code is split across and why.
-2. How a chat travels from upload to rendered analysis.
-3. Where to look in the codebase when something specific breaks.
+- which parts of tea run in the browser, which run on a server, and which are outside services
+- what happens to a chat from upload to the finished read
+- which design rules shape the code, and what they cost
 
+## What tea is
 
+tea is a web app that reads an exported WhatsApp chat and shows two things:
 
----
+- **Hard Facts:** statistics about the chat, like who writes more, who replies faster, who starts conversations and when people are active. tea counts them in the browser. No AI is involved.
+- **AI reads:** a **Profile** of you, and for chats with exactly two people a **Relationship** read about the dynamic between you. An AI model writes them from a pseudonymized sample of the chat, only after you agree.
 
-## 1. The architecture in two diagrams
+The app lives in the `roentgen/` folder. "Röntgen" (x-ray) was the working title. The product name is tea.
 
-The codebase splits into three layers: a **browser layer** that does almost everything, a **server layer** that exists only because two specific things can't run in the browser (an API key and a payment webhook), and an **external services** layer for the APIs we depend on. Two separate flows run on top of those layers — chat analysis and account/payments — so we draw them separately to keep each one readable.
+## Background: three rules behind the design
 
-### Flow A — chat analysis
+Most design decisions in tea come from three rules. If a part of the code looks unusual, one of these rules is usually the reason.
 
-A WhatsApp export becomes statistics, then (only on consent) a pseudonymized packet that travels through our proxy to Anthropic and comes back with the analysis.
+1. **The chat stays on the device.** Parsing, statistics and charts all run in the browser. A server only sees data when the user starts an AI read and agrees on the consent screen, and even then it gets a sample, not the whole chat.
+2. **No real names reach the model.** Before anything leaves the browser, names become `Person A`, `Person B` and so on, and phone numbers, emails and links are removed. The browser puts the real names back into the answer.
+3. **The app works without an API key.** By default it runs in fixture mode and loads sample results from `public/fixtures/`. A new developer can run the whole app without an account, a key or a payment.
+
+## How a chat moves through tea
+
+The diagram shows the path of a chat for an AI read. Green steps run in the browser, orange runs on tea's server, purple is an outside service.
 
 ```mermaid
-flowchart TB
-    UP[Upload .txt / .zip] --> PA[Parser] --> HF[Hard Facts] --> UI[UI + Charts]
-    UI <--> ST[(Local storage)]
-    HF --> EV[Evidence Packet]
-    UI -. consent .-> EV
-    EV --> PS[Pseudonymize]
-    PS -->|pseudonymized| AX["api/analyze<br/>credit + proxy"]
-    AX <--> AN[Anthropic]
-    AX -. restored names .-> UI
+%%{init: {'theme':'base','themeVariables':{'fontSize':'16px','lineColor':'#9A9282','textColor':'#16140F','primaryTextColor':'#16140F','edgeLabelBackground':'#FFFFFF'},'flowchart':{'curve':'linear','rankSpacing':36,'nodeSpacing':50,'padding':16,'wrappingWidth':400}}}%%
+flowchart TD
+    In(["<b>WhatsApp export</b>"])
+    P["<b>PARSE</b><br/>src/parser/whatsapp.ts"]
+    H["<b>HARD FACTS</b><br/>src/analysis/hardFacts.ts"]
+    E["<b>EVIDENCE PACKET</b><br/>src/ai/evidence.ts"]
+    S["<b>PSEUDONYMIZE</b><br/>src/ai/pseudonymize.ts"]
+    A["<b>AI PROXY</b><br/>api/analyze.ts, api/analyze-relationship.ts<br/>spends 1 credit, refunds it on failure"]
+    C["<b>CLAUDE</b><br/>Anthropic API"]
+    R["<b>RESTORE NAMES</b><br/>src/ai/pseudonymize.ts"]
+    Out(["<b>Result saved in the browser</b>"])
 
-    classDef br fill:#dcfce7,stroke:#16a34a,color:#000,stroke-width:2px
-    classDef sv fill:#fee2e2,stroke:#dc2626,color:#000,stroke-width:2px
-    classDef ex fill:#e0e7ff,stroke:#4f46e5,color:#000,stroke-width:2px
-    class UP,PA,HF,UI,ST,EV,PS br
-    class AX sv
-    class AN ex
+    In --> P --> H --> E --> S
+    S -->|after consent| A
+    A --> C
+    C -->|answer, via the proxy| R
+    R --> Out
+
+    classDef br fill:#DDF2CF,stroke:#3E7C2E,stroke-width:1.5px,color:#16140F
+    classDef sv fill:#FFD9BF,stroke:#C25A12,stroke-width:1.5px,color:#16140F
+    classDef ex fill:#E2DCF7,stroke:#5B4BA8,stroke-width:1.5px,color:#16140F
+    classDef ends fill:#16140F,stroke:#ECFD38,stroke-width:2px,color:#ECFD38
+    class In,Out ends
+    class P,H,E,S,R br
+    class A sv
+    class C ex
 ```
 
-Green = browser, red = server, blue = external. The dotted edges are the parts the user controls explicitly: their consent triggers the AI call, and the response gets the real names spliced back in client-side before anything is rendered.
+| Step | What happens | Why it is done this way |
+|---|---|---|
+| Parse | `src/parser/whatsapp.ts` turns the export into a list of messages. It understands German and English date formats, drops system notices like "created group", and merges name variants like `Max` and `Max Müller`. | Pure function, no network. The raw chat is never sent anywhere. |
+| Hard Facts | `src/analysis/hardFacts.ts` goes through the messages once and counts per person: share of messages, reply times, who starts after a silence of 4 hours or more, late-night messages (23:00 to 04:59), and runs of 3 or more messages in a row. | Facts, not opinions. The same chat always gives the same numbers, so this part needs no AI. |
+| Evidence packet | `src/ai/evidence.ts` builds the input for the model: the statistics, a set of notable moments, and a sample of whole conversations picked by `src/ai/sampling.ts`. | The model interprets numbers that are already counted. It does not count itself, so it cannot invent a statistic. |
+| Pseudonymize | `src/ai/pseudonymize.ts` replaces names with `Person A`, `Person B`. For a Profile it also replaces pronouns with the name. | Rule 2. The pronoun step stops the model from guessing a gender the chat does not show. |
+| AI proxy | `api/analyze.ts` (Profile) and `api/analyze-relationship.ts` (Relationship) check the user, spend one credit, send the packet to Anthropic with the server's API key, and refund the credit if the call fails. | The API key must never reach the browser. The proxy does not log request bodies and keeps the packet only for the length of the call. |
+| Claude | The model (by default `claude-haiku-4-5`) writes the read as structured JSON. The Relationship read is split into three parts that run at the same time. | A fast, small model keeps the cost of one read low. Three parallel parts keep the Relationship read under the server time limit. |
+| Restore names | `restoreNamesDeep` in `src/ai/pseudonymize.ts` puts the real names back into the answer. | The user sees real names. Anthropic never did. |
+| Save | The result is saved in the browser: chats and results in IndexedDB, the list of chats in `localStorage`. | Rule 1. No chat and no result is stored on a server. |
 
-### Flow B — accounts and payments
+## How payments work
 
-The browser talks directly to Supabase (auth + credit balance) and Stripe (checkout) via their JS SDKs. The only server hop is the Stripe webhook, which credits the account after a successful purchase.
+Credits are the only thing tea stores on a server. A read costs one credit.
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontSize':'16px','lineColor':'#9A9282','textColor':'#16140F','primaryTextColor':'#16140F','edgeLabelBackground':'#FFFFFF'},'flowchart':{'curve':'linear','rankSpacing':36,'nodeSpacing':50,'padding':16,'wrappingWidth':400}}}%%
 flowchart LR
-    UI2[Browser UI] -->|1. checkout| SP[Stripe]
-    SP -->|2. webhook| CK["api/checkout<br/>+ webhook"]
-    CK -->|3. grant credits| SU[Supabase]
-    UI2 <-->|auth + balance| SU
+    U["<b>BROWSER</b><br/>pick a credit pack"] --> K["<b>CHECKOUT</b><br/>api/checkout.ts"] --> T["<b>STRIPE</b><br/>payment"] --> W["<b>WEBHOOK</b><br/>api/stripe-webhook.ts"] --> D["<b>SUPABASE</b><br/>credits added"]
 
-    classDef br fill:#dcfce7,stroke:#16a34a,color:#000,stroke-width:2px
-    classDef sv fill:#fee2e2,stroke:#dc2626,color:#000,stroke-width:2px
-    classDef ex fill:#e0e7ff,stroke:#4f46e5,color:#000,stroke-width:2px
-    class UI2 br
-    class CK sv
-    class SP,SU ex
+    classDef br fill:#DDF2CF,stroke:#3E7C2E,stroke-width:1.5px,color:#16140F
+    classDef sv fill:#FFD9BF,stroke:#C25A12,stroke-width:1.5px,color:#16140F
+    classDef ex fill:#E2DCF7,stroke:#5B4BA8,stroke-width:1.5px,color:#16140F
+    classDef ends fill:#16140F,stroke:#ECFD38,stroke-width:2px,color:#ECFD38
+    class U br
+    class K,W sv
+    class T,D ex
 ```
 
-The chat content from Flow A never appears in Flow B, and vice versa. They share only the user identity (a Supabase UUID).
+1. The user picks a credit pack. `api/checkout.ts` opens a Stripe checkout.
+2. After the payment, Stripe calls `api/stripe-webhook.ts`, which adds the credits in Supabase.
+3. When a read starts, the AI proxy spends one credit. If the read fails, it refunds the credit.
 
-**What each layer does.**
+Every visitor gets an anonymous Supabase session, so people can buy credits without signing up. After the first purchase, tea suggests signing in with Google so the credits survive a cleared browser. The chat itself never appears in the payment flow.
 
-| Layer | Where it runs | What it touches | Why it exists |
-|-------|---------------|-----------------|---------------|
-| Browser | The user's browser | The full chat, statistics, charts, cached results | This is where the work belongs — the chat is the user's data |
-| Server | Vercel serverless functions | A pseudonymized subset of the chat, briefly | We need a place to hold the Anthropic API key and a Stripe webhook endpoint. Nothing more |
-| External | Anthropic, Supabase, Stripe | Pseudonyms, account info, payments | The model writes the analyses. Supabase handles auth and the credit ledger. Stripe handles money |
+## How the app is organized
 
-The browser does the heavy lifting on purpose. Two things in particular live in the browser even though they could technically run on the server: parsing the chat, and pseudonymizing names before sending data out. Both are there because **the raw chat must never reach a server** ([§3, Rule 1](#rule-1--chats-never-leave-the-device-unless-the-user-asks)).
+`App.tsx` works as a state machine. Each screen is one `Stage`, for example `upload`, `analysis` (the Hard Facts), `consent`, `ai`, `profiles`, `relationship` and `credits`. All moves between screens are calls to `setStage(...)` in `App.tsx`. The [User Flow](README.md#user-flow) in the README shows the same screens from the user's side.
 
-The rest of this document explains *what code lives where* and *how data moves between the layers*.
+The AI layer can be swapped. `src/ai/analyzer.ts` picks one of two analyzers when the app loads, based on `VITE_ROENTGEN_ANALYZER`:
 
----
+- `fixture` (default) returns the sample JSON from `public/fixtures/` after a short random delay of 1.6 to 3.2 seconds, so the loading screens look real
+- `api` sends real requests through the AI proxy
 
-## 2. What tea actually does
+The rest of the app does not know which analyzer is active.
 
-A user uploads a WhatsApp chat export and gets back two things:
+## What the design means in practice
 
-**Hard Facts** — verifiable statistics about the conversation. Who writes more, when, how fast they reply, who breaks the silence after a pause. Computed locally, no AI involved.
+- **Privacy is built in, not added on.** Because the chat is parsed and summarized in the browser, a server cannot leak what it never receives. The cost is that very large chats depend on the user's device. tea stops at 50 MB.
+- **The model sees a sample, not the whole chat.** Reads are faster and cheaper, and the user stays in control of what goes out. The trade-off is that a read can miss something that only appears outside the sample.
+- **Fixture mode keeps development cheap.** Anyone can work on the screens without a key or a payment. A change to the AI layer still has to be tested once in `api` mode with a real key.
+- **One credit per read, refunded on failure.** The user never pays for a read that did not arrive.
 
-**AI Analyses** — psychological profiles of each participant and a relationship analysis between any two of them. Sharp voice, specific observations, never horoscope-speak.
+## Summary
 
-The product is a quantified-self tool with a social mirror baked in. The codebase folder is named `roentgen` (the working title, kept as the folder name). The product brand is **tea**.
+tea does almost everything in the browser. Only an AI read leaves the device, only after consent, and only as a pseudonymized evidence packet that goes through tea's own server to Claude. The answer comes back, the browser restores the names, and the result is saved on the device. Payments run separately through Stripe and Supabase and never touch the chat.
 
----
+## Further reading
 
-## 3. The three rules everything else falls out of
-
-If you change anything in this codebase, know these three rules first. Most "why is this code so weird" questions trace back to one of them.
-
-### Rule 1 — chats never leave the device unless the user asks
-
-Parsing, statistics, charts: all in the browser. The server is contacted only when the user explicitly opts in to an AI analysis and even then only a curated evidence packet goes — not the raw chat.
-
-### Rule 2 — no real names ever reach the model
-
-Before any text leaves the device, real names become `Person A`, `Person B`, … Phone numbers, emails, URLs are scrubbed. The model sees pseudonyms; the browser restores real names locally on the way back.
-
-### Rule 3 — the app must work without an API key
-
-The default analyzer is `fixture` mode, which serves pre-written JSON profiles from `/public/fixtures/`. A new contributor can `npm install && npm run dev` and the entire UX works offline — including the loading animation. Live API mode is one environment variable away.
-
-Every architectural decision in this codebase — strict zoning, the pseudonymization layer, the pluggable analyzer, the credit system, the proxy — was made to keep these three rules intact.
-
----
-
-## 4. Folder layout
-
-```
-roentgen/
-├── api/                  Vercel serverless functions (server layer)
-│   ├── analyze.ts        Credit-spending Anthropic proxy
-│   ├── checkout.ts       Stripe embedded checkout session
-│   ├── stripe-webhook.ts Webhook → grant credits
-│   └── _supabase.ts      Server-side Supabase admin client
-│
-├── public/
-│   ├── fixtures/         Pre-written AI responses (offline mode)
-│   └── prototypes/       Old design explorations, not loaded by the app
-│
-├── server/               Local dev proxy (Vite plugin)
-│
-└── src/
-    ├── App.tsx           Stage machine — orchestrates the user journey
-    ├── i18n.ts           DE / EN string table
-    │
-    ├── parser/           WhatsApp .txt → ParsedChat
-    ├── analysis/         Hard Facts + interpretation templates
-    ├── ai/               Evidence, pseudonymization, prompts, analyzer
-    ├── auth/             Supabase session
-    ├── credits/          Credit balance + Stripe client
-    ├── store/            IndexedDB (sessions) + localStorage (library)
-    └── components/       UI: pages, charts, modals, banners
-```
-
-Most of `src/` is browser-only. The exceptions are `src/ai/`, where pseudonymization runs in the browser but the *next* hop is the server, and `src/auth/` and `src/credits/`, which talk to external services. Everything in `api/` is the server layer.
-
----
-
-## 5. The data flow, step by step
-
-This is the spine of the codebase. Read it once and you can navigate everything.
-
-### Step 1 — Parse
-
-`src/parser/whatsapp.ts` takes a raw WhatsApp `.txt` export and returns a `ParsedChat`:
-
-```ts
-interface ParsedChat {
-  messages: Message[]
-  participants: string[]
-  source: 'whatsapp'
-  locale: 'de' | 'en' | 'mixed'
-  warnings: string[]
-}
-```
-
-It handles four export formats (DE/EN × bracketed/unbracketed), drops system notices ("created group", "end-to-end encrypted"), strips media placeholders, deduplicates aliases when one is a strict word-prefix of another (`Max` and `Max Müller` merge into the longer form), and detects locale from date format and AM/PM presence. Pure, deterministic, no network.
-
-### Step 2 — Hard Facts
-
-`src/analysis/hardFacts.ts` walks `Message[]` once and returns per-person statistics: message share, reply times, initiation count after silences ≥ 4h, late-night activity (23–05), bursts (3+ unanswered messages), and a composite `powerScore`.
-
-These are *facts*, not interpretations. Same for everyone who looks at the same chat.
-
-`src/analysis/interpretation.ts` then maps the numbers to template prose in DE or EN. No LLM involved; just thresholds and templates.
-
-The Hard Facts view is the first thing the user sees. It works offline, costs nothing, and is genuinely the most informative part of the product for many users.
-
-### Step 3 — Consent
-
-The `ConsentScreen` component spells out exactly what will be sent to the AI (a curated sample, pseudonymized) and what won't (the full chat). No analysis runs without that explicit click.
-
-### Step 4 — Evidence Packet
-
-`src/ai/evidence.ts` builds an `EvidencePacket` — roughly 500 tokens of JSON summarizing the conversation:
-
-- Span (first/last date, active days, longest silence)
-- Per-person evidence (signature words, tone hints, reply patterns)
-- Asymmetry metrics (message share delta, initiation leader)
-- Rhythm (most active hour, late-night share, longest burst)
-- A *curated conversation sample* — `src/ai/sampling.ts` selects the most informative messages so the model has real text to cite without seeing the whole chat
-- Heuristic flags for abuse / control / suicidal-ideation triggers
-
-This is the single most important design choice in the AI pipeline. **The model never recounts statistics — it interprets pre-computed evidence and quotes from a curated sample.** Faster, cheaper, more grounded.
-
-### Step 5 — Pseudonymize
-
-`src/ai/pseudonymize.ts` builds a `PseudonymMap` (`{ "Max Müller" → "Person A" }`) and runs three passes:
-
-1. **Names** — full names first, then individual tokens, but only if a token belongs unambiguously to one participant. A surname shared by two participants is left alone to avoid wrong attribution.
-2. **PII** — phones become `[phone]`, emails become `[email]`, URLs become `[link]`.
-3. **Pronouns** (profile analyses only) — third-person personal/possessive pronouns become the name. This stops the model from leaking a gender it cannot actually know from the chat.
-
-`pseudonymizeDeep` walks the entire packet — string leaves and object keys — so nothing slips through. The map stays in browser memory for the inverse pass.
-
-### Step 6 — API call
-
-`api/analyze.ts` is the only entry point between the browser and Anthropic.
-
-1. Authenticate the user via Supabase access token.
-2. Spend one credit via the `spend_credit` Postgres RPC. Atomic — returns false at zero balance and the function returns 402.
-3. Forward an allow-listed body to `https://api.anthropic.com/v1/messages` with the server-side `ANTHROPIC_API_KEY`.
-4. If the upstream call fails, insert a refund row and restore the balance.
-
-The function logs nothing. The pseudonymized packet is held in memory only for the duration of the fetch. The Anthropic API key never reaches the browser.
-
-### Step 7 — Restore
-
-The model returns a JSON tool-use payload. `restoreNamesDeep` walks the response and replaces `Person A` → `Max Müller` everywhere — case-insensitive, with bounded regexes to avoid matching `Person A` inside `Person Alpha`.
-
-The user sees real names; Anthropic never did.
-
-### Step 8 — Render and persist
-
-`ProfileView` and `RelationshipView` render the results. Everything is persisted in IndexedDB, keyed by chat ID. A `chatLibrary` backed by `localStorage` keeps a lightweight index of all chats so the user can switch between analyzed conversations without re-uploading.
-
----
-
-## 6. The pluggable analyzer
-
-`src/ai/analyzer.ts` exports a singleton chosen at module load:
-
-```ts
-const mode = import.meta.env.VITE_ROENTGEN_ANALYZER ?? 'fixture'
-export const analyzer = mode === 'api' ? new ApiAnalyzer() : new FixtureAnalyzer()
-```
-
-Both implementations satisfy the same `Analyzer` interface — the rest of the app does not know or care which is active.
-
-**Why this matters.** A new contributor clones the repo, runs `npm run dev`, and the full UX works without any API key, account, or payment setup. The fixture analyzer simulates 1.6–3.2s of latency so the loading animation feels real. UI flow is iterated without burning API credits.
-
-To go live, set `VITE_ROENTGEN_ANALYZER=api` in `.env` and provide `ANTHROPIC_API_KEY` server-side. Same code path, real responses.
-
----
-
-## 7. The credit system
-
-Users sign in with Google (Supabase OAuth), buy a credit pack via Stripe, and each AI analysis spends one credit.
-
-**The flow.**
-
-1. User picks a credit pack → `api/checkout.ts` creates a Stripe embedded checkout session.
-2. Stripe takes payment → `api/stripe-webhook.ts` receives `checkout.session.completed` and grants credits via the `grant_credits` RPC. The webhook signing secret prevents tampering.
-3. User runs an analysis → `api/analyze.ts` calls `spend_credit` (atomic) before contacting Anthropic. If the upstream call fails, a refund row restores the balance.
-4. The browser subscribes to balance changes via `src/credits/useCredits.ts` — a module-level singleton so badge, paywall, and credits page all stay in sync.
-
-The `transactions` table is the immutable ledger; `accounts.credits` is the cached balance. The RPCs keep them consistent.
-
-Anonymous users can use fixture mode without an account. Once they want real AI, they sign in. If they bought credits before signing in (rare, but possible via flow ordering), `KeepCreditsModal` walks them through claiming the balance.
-
----
-
-## 8. State management
-
-No Redux, no Zustand. Three patterns:
-
-- **`useState`** for component state.
-- **`useSyncExternalStore`** for stores that must stay in sync across the app — `chatLibrary` (mirrors `localStorage`) and `useCredits` (mirrors a module singleton). Both are small handwritten stores.
-- **IndexedDB** for the parsed chats and AI results, keyed by chat ID. We need IndexedDB rather than `localStorage` because chats can exceed the 5–10 MB `localStorage` cap.
-
-`App.tsx` holds a `Stage` enum that is the central state machine — every UI screen is one stage:
-
-```ts
-type Stage =
-  | 'intro' | 'library' | 'upload' | 'parsing' | 'analysis' | 'consent'
-  | 'ai' | 'profiles' | 'relationship_loading' | 'relationship'
-  | 'credits' | 'privacy' | 'imprint' | 'settings'
-```
-
-All transitions live in `App.tsx`. If you want to know what can follow what, search for `setStage(`.
-
----
-
-## 9. The prompting strategy
-
-`src/ai/prompts.ts` holds the system prompts for profile and relationship analyses. Two design choices matter most:
-
-**Evidence-first.** The model never counts. It reads the pre-computed evidence packet and quotes from the curated sample. This makes outputs faster, cheaper, and removes the entire class of "the AI hallucinated a statistic" failures.
-
-**Voice-anchored.** The prompts include explicit ✓ / ✗ examples of the desired voice — sharp, specific, gen-z-adjacent, no horoscope-speak, no framework name-dropping (Bowlby, Gottman, etc.), no coach-speak (`energy`, `journey`, `boundary`, `queen`). The pronoun rule is non-negotiable: always the name, never `er` / `sie` / `he` / `she`.
-
-The output schema is a tool-use definition (`PROFILE_TOOL_SCHEMA`, `RELATIONSHIP_TOOL_SCHEMA`). Server-side retries with hint messages cover Haiku flaking on nested fields, and missing fields are backfilled with schema defaults rather than failing the user.
-
-The default model is `claude-haiku-4-5-20251001`. Sonnet is a one-env-var upgrade for paid tiers.
-
----
-
-## 10. Internationalization
-
-`src/i18n.ts` holds a flat string table for German and English. Locale is detected from the parsed chat (date format + AM/PM presence) and remembered per chat in the library. Interpretations, prompts, and UI strings all switch on the same `Locale` type.
-
----
-
-## 11. What lives in `public/`
-
-- **`public/fixtures/`** — `profile-person-a.json`, `profile-person-b.json`, `relationship.json`. These fuel the fixture analyzer. Edit them to change what an offline run looks like.
-- **`public/prototypes/`** — older standalone HTML pages from the design exploration phase. Not loaded by the React app and not part of the live build path. Treat as historical reference, not a dependency.
-
----
-
-## 12. When something breaks, look here first
-
-| Symptom | First place to look |
-|---------|---------------------|
-| Parser dropped messages | `parser/whatsapp.ts` — check `LINE_RE` against a sample line, then `SYSTEM_MARKERS` |
-| Real names appear in AI output | `ai/pseudonymize.ts` — likely a token slipped past `applyNameScrub`. Add a test case |
-| Statistics look wrong | `analysis/hardFacts.ts` — every stat is a pure function of `Message[]`. Reproduce in isolation |
-| AI returns malformed JSON | `ai/prompts.ts` — tool schema. Server-side retries are in `api/analyze.ts` |
-| Credits don't update in the UI | `credits/useCredits.ts` — verify the Supabase realtime subscription |
-| Stripe webhook silently fails | `api/stripe-webhook.ts` — check the signature first, then the `grant_credits` RPC |
-
----
-
-## 13. What this document does not cover
-
-- **How to run the app locally.** That's in [`roentgen/README.md`](../roentgen/README.md) and the *Getting Started* section there.
-- **How to contribute changes.** That's in [`CONTRIBUTING.md`](./CONTRIBUTING.md).
-- **Product reasoning, brand voice, target user.** [`tea_konzept.md`](../tea_konzept.md) and [`tea_brand_reference.md`](../tea_brand_reference.md).
-- **Privacy and legal compliance.** [`dpia.md`](../dpia.md), [`vvt.md`](../vvt.md), [`privacy-audit.md`](../privacy-audit.md).
-- **Per-file API documentation.** Read the source — public exports are typed and the non-obvious ones are commented inline.
-
----
+- [README](README.md): what tea is, setup, and the user flow
+- [Getting started](getting-started.md): run tea locally in about 10 minutes
+- [Contributing](CONTRIBUTING.md): privacy rules, code style and pull requests
+- [`privacy-audit.md`](../privacy-audit.md), [`dpia.md`](../dpia.md), [`vvt.md`](../vvt.md): privacy and legal documents
+- [`tea_konzept.md`](../tea_konzept.md), [`tea_brand_reference.md`](../tea_brand_reference.md): product idea and brand
 
 ## Glossary
 
-- **Hard Facts** — deterministic, non-AI statistics module. The first analysis screen the user sees.
-- **Evidence Packet** — the JSON object handed to the model. Stats + curated sample + flags.
-- **Pseudonym Map** — `{ realName → "Person A" }` and reverse. Kept in memory per session.
-- **Fixture analyzer** — offline analyzer that returns pre-written JSON. Default in dev.
-- **Stage** — the `App.tsx` state-machine enum that determines which screen renders.
-- **Module** — `'profiles' | 'relationship'`. Tracks which AI analyses a user has unlocked for a given chat.
+| Term | Meaning |
+|---|---|
+| Hard Facts | The statistics tea counts in the browser, without AI |
+| Read | An AI analysis: Profile (you) or Relationship (both people in a two-person chat) |
+| Evidence packet | The input for the model: statistics, notable moments and a sample of conversations |
+| Pseudonym | A placeholder like `Person A` that replaces a real name |
+| Proxy | tea's server functions in `api/` that hold the API key and forward requests to Anthropic |
+| Fixture mode | The default mode, which uses sample results instead of a real AI |
+| Credit | What one read costs. Bought through Stripe, stored in Supabase |
+| Stage | One screen in the `App.tsx` state machine |
