@@ -62,83 +62,125 @@ Chats with more than 20,000 messages may take a few seconds to parse. This runs 
 - WhatsApp `.txt` parser for German and English export formats
 - Hard Facts module: message split, response times, question ratio, conversation initiation, hedge word frequency, emoji density, activity heatmap, engagement curve over time. Runs entirely in the browser, no server contact
 - Profile module: AI-generated analysis of the user's own communication style, based on patterns in their messages only
-- Highlights module: AI-generated description of the most significant moments in the chat, described as behavioral patterns without quoting original messages directly
+- Relationship module: AI-generated analysis of the dynamic between both people in the chat
 - Consent screen before any AI call, showing the exact number of messages being sent and how they are handled
 - Pseudonymization of names before any data leaves the browser
 - Privacy indicator showing local vs. AI-active state throughout the session
-- Stripe payment integration for single chat unlock
+- Credit packs via Stripe to unlock the AI modules, buyable without an account, optional Google sign-in to keep credits across devices
+- Share card for the Hard Facts
+- Library of uploaded chats, stored only in the browser
+- English and German interface
 
 **V2 (planned)**
-Telegram and Instagram parser support, Dynamics module, Development module, Timeline visualization, share-as-image export with automatic anonymization, subscription model.
+Telegram and Instagram parser support, Development module, Timeline visualization, subscription model.
 
 **V3 (planned)**
-Multi-chat comparison, Discord and iMessage support, localization.
+Multi-chat comparison, Discord and iMessage support.
 
 ---
 
 ## User Flow
 
-This diagram shows the path a typical first-time user takes through tea, from landing on the site to saving their first insight.
+This diagram shows how a user moves through tea, screen by screen, depending on what they tap. It follows the code in `roentgen/src/App.tsx`.
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontSize':'16px','lineColor':'#9A9282','textColor':'#16140F','primaryTextColor':'#16140F','edgeLabelBackground':'#FFFFFF'},'flowchart':{'curve':'linear','rankSpacing':40,'nodeSpacing':40,'padding':16,'wrappingWidth':400}}}%%
 flowchart TD
-    Start([User opens<br/>chat-roentgen.vercel.app])
-    
-    Step1[User reads pitch<br/>and privacy note]
-    Dec1{Trusts tea<br/>enough to upload?}
-    Exit1([User leaves<br/>the site])
-    
-    In1[/User exports<br/>WhatsApp chat<br/>from phone/]
-    In2[/User drops txt file<br/>into tea/]
-    Proc1[tea parses chat<br/>locally in browser]
-    Step2[User reads<br/>Hard Facts:<br/>message split,<br/>response times,<br/>heatmap]
-    
-    Dec2{Wants deeper<br/>AI analysis?}
-    Out1[/User saves<br/>screenshot of<br/>Hard Facts/]
-    
-    Step3[User reads<br/>consent screen<br/>data counter shown]
-    Dec3{Agrees to<br/>send sample?}
-    
-    In3[/User pays<br/>via Stripe<br/>single unlock/]
-    Proc2[tea pseudonymizes<br/>names in browser]
-    Proc3[Sample sent<br/>to Claude API]
-    Step4[User reads Profile<br/>and Highlights]
-    
-    Out2[/User saves<br/>anonymized<br/>share card/]
-    End([Session ends<br/>no account, no trail])
-    
-    Start --> Step1
-    Step1 --> Dec1
-    Dec1 -->|No| Exit1
-    Dec1 -->|Yes| In1
-    In1 --> In2
-    In2 --> Proc1
-    Proc1 --> Step2
-    Step2 --> Dec2
-    Dec2 -->|No| Out1
-    Out1 --> End
-    Dec2 -->|Yes| Step3
-    Step3 --> Dec3
-    Dec3 -->|No, stay local| Step2
-    Dec3 -->|Yes| In3
-    In3 --> Proc2
-    Proc2 --> Proc3
-    Proc3 --> Step4
-    Step4 --> Out2
-    Out2 --> End
-    
-    classDef startNode fill:#16140F,stroke:#16140F,stroke-width:2px,color:#ECFD38,font-weight:bold
-    classDef endNode fill:#ECFD38,stroke:#16140F,stroke-width:2px,color:#16140F,font-weight:bold
-    classDef process fill:#F0EBE0,stroke:#16140F,stroke-width:1px,color:#16140F
-    classDef decision fill:#FFFAE0,stroke:#16140F,stroke-width:2px,color:#16140F
-    classDef io fill:#E3DCCB,stroke:#16140F,stroke-width:1px,color:#16140F
-    
-    class Start startNode
-    class End,Exit1 endNode
-    class Step1,Step2,Step3,Step4,Proc1,Proc2,Proc3 process
-    class Dec1,Dec2,Dec3 decision
-    class In1,In2,In3,Out1,Out2 io
+    G1(["Share the card or leave<br/>nothing left your device"])
+    G3(["Back to the numbers<br/>nothing was sent"])
+    Start(["<b>Open spillteato.me</b>"])
+    Q0{"Used tea<br/>before?"}
+    Up["<b>UPLOAD</b><br/>tick the house rules, pick a chat"]
+    Lib["<b>CHAT LIBRARY</b><br/>tap a saved chat"]
+    HF["<b>HARD FACTS</b><br/>your stats, counted in the browser<br/>buttons for Profile and Relationship"]
+    Q1{"Want an<br/>AI read?"}
+    Q2{"Credits<br/>left?"}
+    Buy["<b>CREDITS</b><br/>buy a pack via Stripe"]
+    Con["<b>CONSENT</b><br/>see what goes out, names hidden"]
+    Q3{"Tap Consent<br/>& start?"}
+    AI["<b>AI READ</b><br/>sample goes to Claude, uses 1 credit"]
+    Res["<b>RESULT</b><br/>your Profile or Relationship read"]
+    Done(["<b>Saved in your chat library</b>"])
+    X1(["<b>Share the card or leave</b><br/>nothing left your device"])
+    X3(["<b>Tap Back to the numbers</b><br/>nothing was sent"])
+    G2["<b>CREDITS</b><br/>buy a pack via Stripe"]
+
+    Start --> Q0
+    Q0 -->|no| Up
+    Q0 -->|yes| Lib
+    Up --> HF
+    Lib --> HF
+    HF --> Q1
+    Q1 ~~~ G1
+    Q1 -->|yes| Q2
+    Q1 -->|no| X1
+    Q2 -->|yes| Con
+    Q2 -->|no| Buy
+    Q2 ~~~ G2
+    G2 ~~~ Con
+    Buy -->|tap the read again| Con
+    Con --> Q3
+    Q3 ~~~ G3
+    Q3 -->|yes| AI
+    Q3 -->|no| X3
+    AI --> Res --> Done
+
+    classDef ends fill:#16140F,stroke:#ECFD38,stroke-width:2px,color:#ECFD38
+    classDef exit fill:#FFFFFF,stroke:#9A9282,stroke-width:1.5px,stroke-dasharray:5 4,color:#16140F
+    classDef ghost fill:transparent,stroke:transparent,color:transparent
+    classDef q fill:#FFFFFF,stroke:#16140F,stroke-width:1.5px,color:#16140F
+    classDef local fill:#DDF2CF,stroke:#3E7C2E,stroke-width:1.5px,color:#16140F
+    classDef unlock fill:#FFF2A8,stroke:#A88A00,stroke-width:1.5px,color:#16140F
+    classDef gate fill:#E2DCF7,stroke:#5B4BA8,stroke-width:1.5px,color:#16140F
+    classDef cloud fill:#FFD9BF,stroke:#C25A12,stroke-width:1.5px,color:#16140F
+    class Start,Done ends
+    class X1,X3 exit
+    class G1,G2,G3 ghost
+    class Q0,Q1,Q2,Q3 q
+    class Up,Lib,HF local
+    class Buy unlock
+    class Con gate
+    class AI,Res cloud
 ```
+
+**How to read it**
+
+| Shape | Meaning |
+|---|---|
+| Black rounded box | Where the flow starts or ends |
+| Colored box | A screen in the app |
+| Diamond | A choice. The labels on the arrows say which answer leads where |
+| Dashed rounded box | The user stops here |
+
+Colors: green screens run on your device. Yellow is the payment screen. Purple is the consent screen, still on your device. Orange is the only part that sends data out, and only after you tap "Consent & start".
+
+**What else can happen**
+
+These are not choices, so they are not in the diagram. The app handles them like this:
+
+| Situation | What tea does |
+|---|---|
+| House rules not ticked on the upload screen | The upload stays locked |
+| The file is not a WhatsApp export, is over 50 MB, or has no messages | It shows an error and you can pick another file |
+| The chat has 3 or more people | Only the Profile read is offered. Relationship needs exactly 2 people |
+| The AI call fails | The server refunds the credit, tea shows the error and you can try again |
+| You start a second read on the same chat | The consent screen is skipped, because you already agreed for this chat |
+
+In local development the app runs in fixture mode by default. It loads sample results from `/fixtures` and sends nothing to the AI.
+
+**Terms used in the diagram**
+
+| Term | Meaning |
+|---|---|
+| House rules | The checkbox on the upload screen that you are part of the chat and use tea only for yourself |
+| Hard Facts | Stats tea counts from the chat, like who writes more or who replies faster |
+| Read | An AI analysis. Profile looks at you, Relationship looks at both people |
+| Credit | What a read costs. One read uses one credit |
+| Stripe | The payment service used to buy credit packs |
+| Consent | The screen that shows how many messages would be sent, with names replaced by pseudonyms |
+| AI | Artificial intelligence, here the language model that writes the read |
+| Claude | The AI model by Anthropic. tea sends a pseudonymized evidence packet plus up to 12 chat moments through its own server, not straight from your browser |
+| Chat library | The list of your chats and results, stored in your browser |
 
 ---
 
