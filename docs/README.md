@@ -177,9 +177,9 @@ In local development the app runs in fixture mode by default. It loads sample re
 | Read | An AI analysis. Profile looks at you, Relationship looks at both people |
 | Credit | What a read costs. One read uses one credit |
 | Stripe | The payment service used to buy credit packs |
-| Consent | The screen that shows how many messages would be sent, with names replaced by pseudonyms |
+| Consent | The screen that shows what would be sent to the AI, with names replaced by pseudonyms |
 | AI | Artificial intelligence, here the language model that writes the read |
-| Claude | The AI model by Anthropic. tea sends a pseudonymized evidence packet plus up to 12 chat moments through its own server, not straight from your browser |
+| Claude | The AI model by Anthropic. tea sends a pseudonymized evidence packet (statistics, notable moments and a sample of conversations) through its own server, not straight from your browser |
 | Chat library | The list of your chats and results, stored in your browser |
 
 ---
