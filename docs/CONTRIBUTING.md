@@ -1,232 +1,138 @@
-# Contributing to tea (`roentgen`)
+<!-- Owner: @awyttrinx (documentation). Last checked against the code: 19 Nov 2026. -->
 
-Thanks for considering a contribution. This guide gets you from *cloning the repo* to *opening a pull request* without surprises.
+# Contributing to tea
 
-If you haven't yet, read [`Concept.md`](./Concept.md) first. It explains the architecture and — more importantly — the three privacy constraints that drive every design decision. Most "why is this code so weird" questions are answered there.
+This guide is for developers who want to fix a bug, improve the docs, or add a feature to tea. It takes you from your first idea to a merged pull request.
 
----
+Two things to know before you start:
 
-## Table of contents
+- tea makes a privacy promise: the chat stays in the browser, and only a pseudonymized sample leaves it, after the user agrees. The [privacy rules](#privacy-rules) below protect that promise. A change that breaks one of them will not be merged.
+- For how the app works, read [Concept.md](Concept.md). For setup, follow [Getting started](getting-started.md).
 
-1. [Getting set up](#1-getting-set-up)
-2. [The development loop](#2-the-development-loop)
-3. [How the codebase is organized](#3-how-the-codebase-is-organized)
-4. [Code style and conventions](#4-code-style-and-conventions)
-5. [Privacy rules — non-negotiable](#5-privacy-rules--non-negotiable)
-6. [Adding a new feature](#6-adding-a-new-feature)
-7. [Git workflow](#7-git-workflow)
-8. [Pull request checklist](#8-pull-request-checklist)
-9. [Reporting bugs and asking questions](#9-reporting-bugs-and-asking-questions)
+## Contents
 
----
+1. [Ways to contribute](#ways-to-contribute)
+2. [Set up](#set-up)
+3. [Where the code lives](#where-the-code-lives)
+4. [Privacy rules](#privacy-rules)
+5. [Code style](#code-style)
+6. [Branches and commits](#branches-and-commits)
+7. [Open a pull request](#open-a-pull-request)
+8. [Who owns what](#who-owns-what)
 
-## 1. Getting set up
+## Ways to contribute
 
-### Prerequisites
+| You want to | Do this |
+|---|---|
+| Report a bug | Open an [issue](https://github.com/awyttrinx/chat-roentgen/issues) with the steps to reproduce it, what you expected, what happened, and your browser and OS. **Never paste real chat content.** If the date format matters, remove the names and paste only those lines. |
+| Suggest a feature | Open an issue. Describe the user problem first and your idea second. |
+| Fix the docs | Edit the file in `docs/` and open a pull request. Small fixes like typos and broken links are always welcome. |
+| Change the code | Open an issue first if the change is bigger than a small fix, so we can agree on the approach before you write code. |
 
-- **Node.js 20+** and **npm 10+**. Check with `node -v` and `npm -v`.
-- A modern browser (Chrome, Firefox, Safari, Edge — all current).
-- That's it. No API keys are required to run the app locally — fixture mode covers the full UX.
+## Set up
 
-### Clone and install
+Follow [Getting started](getting-started.md). In short:
 
 ```bash
-git clone https://github.com/Nils43/chat-roentgen.git
+git clone https://github.com/awyttrinx/chat-roentgen.git
 cd chat-roentgen/roentgen
 npm install
-```
-
-### Configure environment
-
-```bash
 cp .env.example .env
-```
-
-The defaults in `.env.example` enable **fixture mode** — the app runs entirely on pre-written JSON responses with no API key. Open `.env` if you later want to switch to live mode; see [`roentgen/README.md`](../roentgen/README.md) for the full env reference.
-
-### Run
-
-```bash
 npm run dev
 ```
 
-Open <http://localhost:5173>. Upload any WhatsApp `.txt` export (Settings → Chat → ⋮ → Export chat → Without media). The `Get an analysis` button works without a key thanks to fixture mode.
+The app runs at `http://localhost:5173`. By default it runs in **fixture mode**: the AI reads load sample results from `public/fixtures/`, so you need no API key. Most contributions can be built and tested in fixture mode.
 
-### Optional — live AI mode
-
-If you want to develop against the real Anthropic API, see the *Switching to live AI* section in [`roentgen/README.md`](../roentgen/README.md). For most contributions, fixture mode is enough.
-
----
-
-## 2. The development loop
+The commands you will use:
 
 | Command | What it does |
-|---------|--------------|
-| `npm run dev` | Vite dev server with HMR at `localhost:5173` |
-| `npm run build` | Type-check (`tsc -b`) and produce a production bundle in `dist/` |
-| `npm run preview` | Serve the production build locally |
-| `npm run lint` | ESLint over the whole project |
+|---|---|
+| `npm run dev` | Starts the Vite dev server with hot reload |
+| `npm run lint` | Runs ESLint over the project |
+| `npm run build` | Runs a strict TypeScript check and builds the app into `dist/` |
+| `npm run preview` | Serves the built app locally |
 
-Before pushing, run at least:
-
-```bash
-npm run lint
-npm run build
-```
-
-`build` includes a strict TypeScript pass. If `build` fails, CI will fail.
-
----
-
-## 3. How the codebase is organized
+## Where the code lives
 
 ```
 roentgen/
-├── api/              Vercel serverless functions (Zone 3)
-├── public/           Static assets, AI fixtures, design prototypes
-├── server/           Local dev proxy
+├── api/              Serverless functions: the AI proxy, checkout, Stripe webhook
+├── public/fixtures/  Sample AI results for fixture mode
+├── server/           Local dev proxy for the api/ functions
 └── src/
-    ├── parser/       WhatsApp .txt → ParsedChat
-    ├── analysis/     Hard Facts + interpretation templates
+    ├── parser/       WhatsApp export → parsed chat
+    ├── analysis/     Hard Facts and their text templates
     ├── ai/           Evidence, pseudonymization, prompts, analyzer
     ├── auth/         Supabase session
-    ├── credits/      Credit balance + Stripe client
-    ├── store/        IndexedDB + localStorage state
-    └── components/   Pages, charts, modals, banners
+    ├── credits/      Credit balance and Stripe client
+    ├── store/        Chats and results saved in the browser
+    └── components/   Screens, charts, modals
 ```
 
-Where to put new code, in plain language:
+Where a new piece of code goes:
 
-- A new statistic over the parsed chat → `src/analysis/`
+- A new statistic → `src/analysis/hardFacts.ts`
 - A new chart → `src/components/charts/`
-- A new screen → a component under `src/components/`, plus a new `Stage` value in `App.tsx`
-- A new AI analysis type → `src/ai/` (new prompt, new schema, new orchestrator) plus the corresponding fixture JSON in `public/fixtures/`
-- A change to the parser → `src/parser/whatsapp.ts` and please add a regression chat sample
-- A new server-side endpoint → `api/`
+- A new screen → a component in `src/components/` and a new `Stage` in `App.tsx`
+- A parser change → `src/parser/whatsapp.ts`, plus an example in the pull request that shows the new behavior
+- A new AI read → a prompt in `src/ai/prompts.ts`, an orchestrator next to `profile.ts`, and a fixture in `public/fixtures/`. Open an issue first, this is a big change.
 
-If you're not sure, open an issue first and describe what you're trying to do.
+## Privacy rules
 
----
+These rules are the product, not a style choice.
 
-## 4. Code style and conventions
+1. **Never log chat content.** Not in `console.log`, not on the server, not in analytics, not in error messages. Describe the type of error, not the data.
+2. **Never send raw chat text anywhere.** The only data that leaves the browser is the pseudonymized evidence packet, and only after the user agrees on the consent screen.
+3. **Never send real names to the model.** Run `pseudonymizeDeep` on everything that goes to `api/analyze.ts` or `api/analyze-relationship.ts`, and `restoreNamesDeep` on everything that comes back.
+4. **Never store chats on the server.** Supabase holds accounts and credits only. Chats stay in the user's browser.
+5. **Never skip the consent screen.** It is the user's last chance to say no.
 
-### TypeScript
+If your feature seems to need one of these rules broken, open an issue before you write code. There is usually a way to keep the rule.
 
-- **Strict everywhere.** No `any` outside of well-justified narrow casts. Prefer `unknown` and narrow it.
-- **Type imports use `import type`.** Vite enforces this on bundling.
-- **Pure functions over classes** unless there is a real reason. The parser, hard facts, evidence builder, and pseudonymizer are all pure.
-- **Single export of the obvious thing.** A file named `whatsapp.ts` exports `parseWhatsApp`. A file named `hardFacts.ts` exports `analyzeHardFacts`. Keep the surface area small.
+## Code style
 
-### React
+- **TypeScript is strict.** Avoid `any`. Use `unknown` and narrow it. Use `import type` for type imports.
+- **Prefer pure functions.** The parser, the Hard Facts and the pseudonymizer are pure. Keep them that way.
+- **React:** function components only, Tailwind classes instead of new CSS files.
+- **Text:** every new user-facing string goes into `src/i18n.ts` in English and German.
+- **Comments say why, not what.** The code already says what it does. A good comment explains a decision, a rule, or something that would surprise the next reader. For good examples, see `src/ai/pseudonymize.ts` and `api/analyze.ts`.
 
-- **Function components only.** No class components.
-- **Hooks at the top of the file.** State, derived state, effects, then handlers, then JSX.
-- **No prop drilling deeper than two levels.** Lift to the singleton store (`chatLibrary`, `useCredits`) or the `App.tsx` state machine.
-- **No global CSS files.** Tailwind classes inline. The one `index.css` is for Tailwind base + a handful of CSS custom properties.
+## Branches and commits
 
-### File and symbol naming
-
-- File names match the dominant export: `whatsapp.ts` exports `parseWhatsApp`, `Upload.tsx` exports `Upload`.
-- React components are `PascalCase`. Hooks are `useCamelCase`. Pure functions are `camelCase`.
-- Test data, fixtures, and design tokens use `kebab-case` filenames.
-
-### Comments
-
-- Comment **why**, not **what**. The TypeScript already says what.
-- Every non-obvious regex gets at least one example line above it. The parser has many of these — match the style.
-- If you discover a non-obvious WhatsApp quirk, document it inline. The next person will save an hour.
-
-#### Exemplars
-
-When in doubt, mirror the comment style of these four files. Each one is short on what-comments and heavy on why-comments — invariants, non-obvious decisions, links between distant pieces of code, things that would surprise a careful reader.
-
-| File | What to learn from it |
-|---|---|
-| [`roentgen/api/analyze.ts`](../roentgen/api/analyze.ts) | Server-layer rationale: why `maxDuration: 60`, why retries are bounded by a deadline, why the refund path lives in two places, why `_supabase` imports are static. |
-| [`roentgen/src/ai/pseudonymize.ts`](../roentgen/src/ai/pseudonymize.ts) | Privacy invariants and two-pass regex reasoning. The function-level comments explain *why* full-name passes happen before token passes, and what the case-insensitive restoration is guarding against. |
-| [`roentgen/src/analysis/hardFacts.ts`](../roentgen/src/analysis/hardFacts.ts) | Pure-function discipline. The top-of-file rationale links the file to the product's privacy promise and explicitly forbids `await`. |
-| [`roentgen/src/ai/relationship.ts`](../roentgen/src/ai/relationship.ts) | Architecture decision recorded next to the code it affects: why three parallel chunks instead of one call, with the latency math that drove the choice. |
-
-A comment that simply restates the next line ("// loop over messages") is worse than no comment — it adds noise and rots faster than the code it describes. If you can delete a comment without losing information, delete it.
-
-### Linting
-
-ESLint is configured in `eslint.config.js` with the React + TypeScript presets. Don't disable rules in passing — if a rule fights you, raise it on the PR.
-
----
-
-## 5. Privacy rules — non-negotiable
-
-These are not style preferences. They are the product.
-
-1. **Never log user chat content.** Not in `console.log`, not on the server, not in error messages, not in analytics. Errors should describe the *shape* of the failure, not the data.
-2. **Never send raw chat text to any third party.** The only data leaving the device is the pseudonymized evidence packet, and only after explicit user consent on the consent screen.
-3. **Never send real names to the model.** Use `pseudonymizeDeep` on anything that crosses the boundary into `api/analyze.ts`. Use `restoreNamesDeep` on anything coming back.
-4. **Never persist chat content server-side.** Supabase stores user accounts and credit ledgers — not chats. IndexedDB is for the user's own browser.
-5. **Never bypass the consent screen.** The `ConsentScreen` component is the user's exit ramp. Adding a flow that skips it is a privacy regression and will be rejected.
-
-If a feature seems to require breaking one of these, open an issue **before** writing code. There is almost always a way to keep the constraint.
-
----
-
-## 6. Adding a new feature
-
-A worked example: *"I want to add a 'most-used emoji' card to the Hard Facts page."*
-
-1. **Compute the data.** In `src/analysis/hardFacts.ts`, the per-person stats already include `topEmojis`. If a stat doesn't exist, add it as a pure function over `Message[]` and surface it on `PerPersonStats`.
-2. **Write an interpretation.** In `src/analysis/interpretation.ts`, add a small DE/EN snippet keyed off the metric. No LLM, just templates.
-3. **Render it.** Add a card to `src/components/HardFactsView.tsx`. Tailwind classes, no new CSS file. Match the existing visual rhythm.
-4. **Translate.** Add any new strings to `src/i18n.ts` under both `de` and `en` keys.
-5. **Verify offline.** `npm run dev`, upload a sample chat, see the card appear.
-6. **Lint and build.** `npm run lint && npm run build`.
-7. **Open a PR.** See [§7](#7-git-workflow) and [§8](#8-pull-request-checklist).
-
-For a new AI analysis (bigger lift): you'll touch `ai/prompts.ts` (system prompt + tool schema), add a fixture in `public/fixtures/`, write an orchestrator in `src/ai/` modeled on `profile.ts` or `relationship.ts`, add a result view component, and add a stage to `App.tsx`. Open an issue first — these are non-trivial and worth aligning on the design before coding.
-
----
-
-## 7. Git workflow
-
-- **`main`** is always deployable. Vercel deploys it on push.
-- **Feature branches** are named `feat/<short-description>`, fixes are `fix/<short-description>`, docs are `docs/<short-description>`.
-- **Commit messages** are imperative and scoped: `fix(parser): handle iOS narrow-no-break-space in AM/PM exports`. The scope is optional but appreciated.
-- **Rebase, don't merge** when bringing your branch up to date.
-- **Squash on merge** unless your branch has a thoughtful commit history worth preserving.
+- `main` must always build and run. Do not commit to it directly.
+- Name your branch after the type of change: `feat/<topic>`, `fix/<topic>` or `docs/<topic>`.
+- Write commit messages in the imperative and keep each commit to one change, for example `fix(parser): handle narrow no-break spaces in AM/PM exports`.
 
 ```bash
-git checkout -b feat/late-night-detector
-# … work, commit …
+git checkout -b fix/am-pm-parsing
+# make your change, then commit
 git fetch origin
 git rebase origin/main
-git push -u origin feat/late-night-detector
+git push -u origin fix/am-pm-parsing
 ```
 
-Open the PR via the GitHub UI.
+Then open the pull request on GitHub.
 
----
+## Open a pull request
 
-## 8. Pull request checklist
+Check these before you ask for a review:
 
-Before requesting review, confirm:
+- [ ] `npm run lint` passes
+- [ ] `npm run build` passes
+- [ ] The change works in fixture mode, without an API key
+- [ ] All five [privacy rules](#privacy-rules) still hold
+- [ ] No real chat content in the code, the commits or the pull request
+- [ ] If you changed `src/ai/`: names are replaced and restored correctly, also for names with two parts like `Max Müller`
+- [ ] New text exists in English and German
+- [ ] The description says what changed and why, with a link to the issue if there is one
 
-- [ ] `npm run lint` passes.
-- [ ] `npm run build` passes (this includes a strict TypeScript pass).
-- [ ] The change works in **fixture mode** — i.e. without an API key.
-- [ ] If you touched `src/parser/`, you added a real-world chat snippet that demonstrates the behavior (gist link or short paste in the PR description; never commit a real chat to the repo).
-- [ ] If you touched `src/ai/`, you confirmed the pseudonymization and restore round-trip on a chat with multi-token names like `Max Müller`.
-- [ ] Privacy rules in [§5](#5-privacy-rules--non-negotiable) are intact.
-- [ ] No `console.log` of chat content. (`console.log` of structural facts during dev is fine, but remove before merging.)
-- [ ] DE and EN strings are both present for any new user-facing text.
-- [ ] The PR description explains *what* changed and *why* — link to the issue if there is one.
+The reviewer checks the privacy rules first, then whether the change works in fixture mode, then the code style.
 
-A reviewer will look for: privacy compliance, code style, behavior in fixture mode, and whether the change earns its complexity.
+## Who owns what
 
----
+| Area | Owner |
+|---|---|
+| Documentation in `docs/` | [@awyttrinx](https://github.com/awyttrinx) |
+| App code in `roentgen/` | [@Nils43](https://github.com/Nils43) |
 
-## 9. Reporting bugs and asking questions
-
-- **Bugs:** open a GitHub issue with steps to reproduce, expected vs. actual behavior, and your browser + OS. **Do not paste real chat content.** A redacted snippet of the relevant lines is enough; usually only the date format matters.
-- **Feature ideas:** open an issue and describe the user problem first, the proposed solution second. The privacy constraints in [§5](#5-privacy-rules--non-negotiable) are the main filter — if a feature needs to break them, it likely won't ship as-is, but there's often a creative way to keep them.
-- **Questions about the architecture:** [`Concept.md`](./Concept.md) is the long answer. If it doesn't cover your question, the answer probably belongs in there — open an issue and we'll add it.
-
-Welcome aboard.
+If you are not sure who to ask, open an issue and tag the owner of the area.
