@@ -1,3 +1,5 @@
+// The only place a chat gets stored, and it stays in the browser. IDB instead
+// of localStorage because chat + results can go past the 5-10 MB cap.
 import type { ParsedChat } from '../parser/types'
 import type { PrepareResult } from '../ai/profile'
 import type { ProfileResult, RelationshipResult } from '../ai/types'
@@ -11,6 +13,8 @@ export interface SessionSnapshot {
   savedAt: string
 }
 
+// Same keys as the old localStorage entries, so the migration can copy them
+// over 1:1 and listSessionIds can filter on the prefix.
 const PREFIX = 'roentgen.chat.'
 const DB_NAME = 'roentgen'
 const DB_VERSION = 1
@@ -20,6 +24,8 @@ function keyFor(id: string): string {
   return `${PREFIX}${id}`
 }
 
+// JSON.stringify turns Dates into strings. Only `ts` gets revived because
+// that's what hardFacts does date math on. Everything else stays a string.
 function reviveDates<T>(value: T): T {
   if (value instanceof Date) return value
   if (Array.isArray(value)) return value.map(reviveDates) as unknown as T
@@ -34,6 +40,8 @@ function reviveDates<T>(value: T): T {
   return value
 }
 
+// Open once per page and reuse. Reopening on every read/write is slow and
+// can block an upgrade in another tab.
 let dbPromise: Promise<IDBDatabase> | null = null
 
 function openDB(): Promise<IDBDatabase> {
@@ -48,6 +56,8 @@ function openDB(): Promise<IDBDatabase> {
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
+    // Another tab still has the old version open. Fail instead of hanging,
+    // callers treat it like a missing chat.
     req.onblocked = () => reject(new Error('IndexedDB open blocked'))
   })
   return dbPromise
@@ -105,6 +115,8 @@ function migrateFromLocalStorage(): Promise<void> {
         if (val == null) continue
         try {
           await idbPut(k, val)
+          // Only remove after the write worked, so nothing gets lost.
+          // If it fails, the next page load tries again.
           localStorage.removeItem(k)
         } catch (err) {
           console.error('[sessionStore] migration failed for', k, err)
@@ -125,10 +137,14 @@ export async function loadSession(id: string): Promise<Partial<SessionSnapshot> 
     const parsed = JSON.parse(raw) as Partial<SessionSnapshot>
     return reviveDates(parsed)
   } catch {
+    // Missing or broken entry: App.tsx shows "isn't on your device anymore"
+    // and drops the card instead of crashing.
     return null
   }
 }
 
+// false instead of throwing. Usually means the storage quota is full, and
+// App.tsx shows the "too big for this device" error for it.
 export async function saveSession(
   id: string,
   snapshot: Omit<SessionSnapshot, 'savedAt'>,
@@ -149,7 +165,8 @@ export async function clearSession(id: string): Promise<void> {
   try {
     await idbDelete(keyFor(id))
   } catch {
-    // ignore
+    // chatLibrary.remove drops the card anyway. A leftover entry only shows
+    // up again if the index gets rebuilt from IDB (listSessionIds).
   }
 }
 
