@@ -31,7 +31,7 @@ For the full setup guide, see [`getting-started.md`](./getting-started.md).
 
 ## Examples
 
-Upload a WhatsApp `.txt` export and the app parses it locally. The Hard Facts module loads immediately — message split between participants, response times, who initiates conversations, emoji usage, and an activity heatmap by hour and day of week. None of this requires a server call.
+Upload a WhatsApp `.txt` export and the app parses it locally. The Hard Facts module loads immediately: message split between participants, response times, who initiates conversations, emoji usage, and an activity heatmap by hour and day of week. None of this requires a server call.
 
 If you unlock the AI modules, you get a profile of your own communication style, an analysis of the dynamic between both people, and a breakdown of the most significant moments in the chat. Moments are described as patterns, not quoted directly.
 
@@ -49,7 +49,7 @@ WhatsApp export formats vary between iOS and Android and across different langua
 This can happen if a participant changed their display name at some point during the chat. WhatsApp records the name at the time of export, but older messages may carry a different name. This is a known limitation of the WhatsApp export format.
 
 **The AI modules are not loading.**
-If you are running locally, confirm that `ANTHROPIC_API_KEY` is set in your `.env` file, that `VITE_ROENTGEN_ANALYZER` is set to `api`, and that you restarted the dev server after making changes. If you are on the live app and the modules stay loading for more than a minute, try refreshing the page and unlocking again — the session is not stored, but your payment carries over.
+If you are running locally, confirm that `ANTHROPIC_API_KEY` is set in your `.env` file, that `VITE_ROENTGEN_ANALYZER` is set to `api`, and that you restarted the dev server after making changes. If you are on the live app and the modules stay loading for more than a minute, try refreshing the page and unlocking again. The session is not stored, but your payment carries over.
 
 **The app is slow on large chats.**
 Chats with more than 20,000 messages may take a few seconds to parse. This runs on your device, so performance depends on your hardware. The AI modules also take longer because more content needs to be sampled and sent.
@@ -58,9 +58,9 @@ Chats with more than 20,000 messages may take a few seconds to parse. This runs 
 
 ## Changelog
 
-**V1 — current**
+**V1 (current)**
 - WhatsApp `.txt` parser for German and English export formats
-- Hard Facts module: message split, response times, question ratio, conversation initiation, hedge word frequency, emoji density, activity heatmap, engagement curve over time — runs entirely in the browser, no server contact
+- Hard Facts module: message split, response times, question ratio, conversation initiation, hedge word frequency, emoji density, activity heatmap, engagement curve over time. Runs entirely in the browser, no server contact
 - Profile module: AI-generated analysis of the user's own communication style, based on patterns in their messages only
 - Highlights module: AI-generated description of the most significant moments in the chat, described as behavioral patterns without quoting original messages directly
 - Consent screen before any AI call, showing the exact number of messages being sent and how they are handled
@@ -68,10 +68,10 @@ Chats with more than 20,000 messages may take a few seconds to parse. This runs 
 - Privacy indicator showing local vs. AI-active state throughout the session
 - Stripe payment integration for single chat unlock
 
-**V2 — planned**
+**V2 (planned)**
 Telegram and Instagram parser support, Dynamics module, Development module, Timeline visualization, share-as-image export with automatic anonymization, subscription model.
 
-**V3 — planned**
+**V3 (planned)**
 Multi-chat comparison, Discord and iMessage support, localization.
 
 ---
@@ -144,11 +144,10 @@ flowchart TD
 
 ## Additional resources
 
-- [`getting-started.md`](./getting-started.md) — local setup walkthrough for developers (~10 min to a running instance)
-- [`tutorial.md`](./tutorial.md) — end-to-end walkthrough of a first tea session for users
-- [`Concept.md`](./Concept.md) — architecture and design rationale
-- [`CONTRIBUTING.md`](./CONTRIBUTING.md) — contribution guidelines
-- [`tea_konzept.md`](../tea_konzept.md) — original product concept document (German)
+- [`getting-started.md`](./getting-started.md): for developers who want tea running on their own machine. Takes about 10 minutes and ends with your first analyzed chat.
+- [`Concept.md`](./Concept.md): for developers who want to understand how tea works inside, what stays in the browser and what leaves it, and why.
+- [`CONTRIBUTING.md`](./CONTRIBUTING.md): for anyone who wants to fix a bug or add a feature. How to open an issue, where to branch and how a pull request gets merged.
+- [`tea_konzept.md`](../tea_konzept.md): the original product concept by Nils, in German.
 
 ---
 
