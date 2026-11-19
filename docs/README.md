@@ -150,7 +150,7 @@ flowchart TD
 | Black rounded box | Where the flow starts or ends |
 | Colored box | A screen in the app |
 | Diamond | A choice. The labels on the arrows say which answer leads where |
-| Dashed rounded box | The user stops here |
+| White rounded box | The user stops here |
 
 Colors: green screens run on your device. Yellow is the payment screen. Purple is the consent screen, still on your device. Orange is the only part that sends data out, and only after you tap "Consent & start".
 
